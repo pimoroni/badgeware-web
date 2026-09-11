@@ -12,6 +12,8 @@
      simulator/filesystem/badgeware/badge.py    (+ text, math, memory, state, rtc, filesystem)
      picovector api/ stubs (color, brush, image, shape, spritesheet,
        vec2, rect, mat3, tween, indexed_image, algorithm)
+     picovector api/pico3d/ stubs (vec3, mat4, mesh, material, light,
+       surface, engine)
      MicroPython 1.x built-in functions / types / exceptions / modules
    ------------------------------------------------------------------------- */
 
@@ -67,6 +69,99 @@ const SIG_BLIT = [
       { label: 'filter=NEAREST', doc: 'Scaling filter: image.NEAREST, image.BILINEAR or image.BICUBIC.' },
     ] },
 ];
+
+/* -- pico3d signature help ---------------------------------------------------
+   The 3D module's calls are keyword-heavy, so these also drive the "name="
+   completions offered inside the parens.                                     */
+const SIG_MESH = {
+  label: 'mesh(positions, indices, normals=None, uvs=None, colors=None, tangents=None)',
+  params: [
+    { label: 'positions', doc: 'An array("f") of 3 floats a vertex. Borrowed, not copied, so writing into it deforms the mesh with no rebuild.' },
+    { label: 'indices', doc: 'An array("H") of 3 vertex indices a triangle. Triangles wind counter-clockwise seen from the front; back faces are culled unless the material is double_sided.' },
+    { label: 'normals=None', doc: 'An array("f") of 3 floats a vertex. Needed by GOURAUD shading and by a matcap.' },
+    { label: 'uvs=None', doc: 'An array("f") of 2 floats a vertex. Needed to sample a texture.' },
+    { label: 'colors=None', doc: 'An array("I") of one packed RGB word a vertex. Per-vertex colour replaces material.color.' },
+    { label: 'tangents=None', doc: 'An array("f") of 3 floats a vertex. Needed by a normal map.' },
+  ],
+};
+
+const SIG_MATERIAL = {
+  label: 'material(color=None, texture=None, shading=FLAT, filter=NEAREST, double_sided=False, alpha_cutoff=128, normal_map=None, matcap=None, specular=None, shininess=32)',
+  params: [
+    { label: 'color=None', doc: 'Base colour (a color), defaulting to white. It multiplies the texture sample, so white leaves a texture alone. Ignored by a mesh with per-vertex colors.' },
+    { label: 'texture=None', doc: 'An RGBA image sampled through the mesh uvs. Edge-clamped: uvs outside 0..1 stretch the border rather than wrapping.' },
+    { label: 'shading=FLAT', doc: 'material.FLAT (one light value a triangle), material.GOURAUD (per-vertex, interpolated) or material.UNLIT. All three resolve the light per vertex, so none costs anything per pixel.' },
+    { label: 'filter=NEAREST', doc: 'Texture sampling: material.NEAREST (default) or material.BILINEAR, which costs four texel reads a pixel.' },
+    { label: 'double_sided=False', doc: 'Draw back faces too. Leave it off unless the geometry is genuinely open (a flag, a leaf, a plane seen from both sides) - culling halves the triangles a closed mesh sets up.' },
+    { label: 'alpha_cutoff=128', doc: 'Discard texels whose alpha is below this; 0 draws them all. A cutout, not blending: a pixel is either written or skipped, which is what makes foliage and cards cheap.' },
+    { label: 'normal_map=None', doc: 'A tangent-space normal map. Needs mesh tangents and a light, and moves lighting to per-pixel.' },
+    { label: 'matcap=None', doc: 'A matcap / spherical environment map, sampled with the interpolated normal. Needs mesh normals and the view matrix passed to render(). No light involved; the sample multiplies color.' },
+    { label: 'specular=None', doc: 'Blinn-Phong highlight colour (a color), or black for none. Needs a light and render(view=...).' },
+    { label: 'shininess=32', doc: 'Blinn-Phong exponent. Higher is a tighter, sharper highlight. Only read when specular is set.' },
+  ],
+};
+
+const SIG_LIGHT = {
+  label: 'light(direction=None, color=None, ambient=None, position=None, atten=1.0)',
+  params: [
+    { label: 'direction=None', doc: 'The direction the light travels (a vec3), defaulting to vec3(0, 0, -1), away from the camera. Need not be normalised. Ignored by a point light.' },
+    { label: 'color=None', doc: 'Diffuse colour, defaulting to white, scaled by how much a face faces the light.' },
+    { label: 'ambient=None', doc: 'Colour added everywhere whatever the facing, defaulting to black. This is the floor on how dark an unlit face gets.' },
+    { label: 'position=None', doc: 'Passing a world position (a vec3) makes this a point light instead of a directional one.' },
+    { label: 'atten=1.0', doc: 'Point-light falloff: brightness scales by 1 / (1 + atten * distance^2). 0 is no falloff at all.' },
+  ],
+};
+
+const SIG_SURFACE = {
+  label: 'surface(image, bands=1)',
+  params: [
+    { label: 'image', doc: 'An RGBA image to wrap as a render target, held alive by the surface. A palettised one is refused, since the engine writes pixels rather than indices.' },
+    { label: 'bands=1', doc: 'Split the surface horizontally for draw(), allocating the depth buffer one band tall rather than one screen tall - at 320x240, four bands is 38 KB instead of 150 KB.\nOnly draw() uses it; render() needs the whole buffer and refuses a surface with more than one band.' },
+  ],
+};
+
+const SIG_SCENE = {
+  label: 'scene(surface, meshes=16, vertices=512, triangles=512)',
+  params: [
+    { label: 'surface', doc: 'The surface this scene projects for, held alive by it. draw() only accepts a scene built against the same surface: add() projects for one viewport.' },
+    { label: 'meshes=16', doc: 'How many add() calls one frame may hold.' },
+    { label: 'vertices=512', doc: 'Total vertices across every mesh added. A mesh costs its own vertex count whatever it is drawn with.' },
+    { label: 'triangles=512', doc: 'Total triangles across every mesh added.\nNothing allocates after construction, so add() returns False rather than growing.' },
+  ],
+};
+
+const SIG_SCENE_ADD = {
+  label: 'add(mesh, model, view_proj, material, light=None, view=None)',
+  params: [
+    { label: 'mesh', doc: 'The mesh to transform, shade and project into the scene.' },
+    { label: 'model', doc: 'A mat4 placing the mesh in the world.' },
+    { label: 'view_proj', doc: 'The camera: projection times view.' },
+    { label: 'material', doc: 'The material giving the colour, texture and shading model.' },
+    { label: 'light=None', doc: 'A light, or None to project as if the material were UNLIT.' },
+    { label: 'view=None', doc: 'The view matrix on its own. Only matcap and specular materials need it.' },
+  ],
+};
+
+const SIG_DRAW = {
+  label: 'draw(scene, clear_to=65535)',
+  params: [
+    { label: 'scene', doc: 'The scene to rasterise, one band of rows at a time. It has to be one built against this surface.' },
+    { label: 'clear_to=65535', doc: 'Each band clears its own slice of the depth buffer to this first, so there is no clear_depth() to remember. 0 is the near plane, 65535 the far one.' },
+  ],
+};
+
+const SIG_RENDER = {
+  label: 'render(mesh, model, view_proj, material, light=None, depth=True, view=None)',
+  params: [
+    { label: 'mesh', doc: 'The mesh to transform, shade and rasterise.' },
+    { label: 'model', doc: 'A mat4 placing the mesh in the world.' },
+    { label: 'view_proj', doc: 'The camera: projection times view, i.e. mat4.perspective(...).multiply(mat4.look_at(...)).' },
+    { label: 'material', doc: 'The material giving the colour, texture and shading model.' },
+    { label: 'light=None', doc: 'A light, or None to render as if the material were UNLIT.' },
+    { label: 'depth=True', doc: 'False skips the depth buffer for this call - no per-pixel depth read or write, a real saving on a convex, back-face-culled mesh that cannot occlude itself.' },
+    { label: 'view=None', doc: 'The view matrix on its own. Only matcap and specular materials need it: without it a matcap is fixed in world space and a highlight will not appear.' },
+  ],
+};
 
 export const BADGEWARE_GLOBALS = [
 
@@ -335,6 +430,7 @@ export const BADGEWARE_GLOBALS = [
   { label: 'UnicodeError',      kind: 'Class', doc: 'Raised for Unicode-related encoding/decoding errors.' },
 
   // -- Importable modules -----------------------------------------------------
+  { label: 'pico3d',  kind: 'Module', doc: 'Fixed-function 3D rasteriser. Import: import pico3d\nA scene is a mesh, a material and a light, drawn by a surface over a picovector image - so 3D and 2D share one framebuffer.\nKey: pico3d.surface(screen), pico3d.mesh(positions, indices), pico3d.mat4.perspective(...), pico3d.vec3(x, y, z)\nDraw a mesh at a time with surface.render(), or gather a frame into a pico3d.scene and surface.draw() it a band of rows at a time.' },
   { label: 'math',    kind: 'Module', doc: 'Mathematical functions. Import: import math\nOr: from math import sin, cos, pi' },
   { label: 'time',    kind: 'Module', doc: 'Time and delays. Import: import time\nKey: time.ticks_ms(), time.sleep_ms()' },
   { label: 'random',  kind: 'Module', doc: 'Random numbers. Import: import random\nKey: random.random(), random.randint(a, b)' },
@@ -613,6 +709,10 @@ export const MEMBERS = {
     // -- Shape instance methods ------------------------------------------------
     { label: 'stroke',           kind: 'Method', insertText: 'stroke(${1:width})',
       doc: 'Replace this shape with its stroked outline. Returns self.\nArgs: width (float), flags (OR of ALIGN_*/PATH_*/JOIN_*/CAP_*), miter_limit=4.0.' },
+    { label: 'grow',             kind: 'Method', insertText: 'grow(${1:amount})',
+      doc: 'Replace this shape with one offset outward by amount along its edge normals. Returns self.\nArgs: amount (float), join (a JOIN_* value, for convex corners), miter_limit=4.0.\nWinding does not matter: a positive amount always grows outward.' },
+    { label: 'shrink',           kind: 'Method', insertText: 'shrink(${1:amount})',
+      doc: 'Replace this shape with one inset by amount along its edge normals. Returns self.\nArgs: amount (float), join (a JOIN_* value, for convex corners), miter_limit=4.0.' },
     { label: 'bounds',           kind: 'Method', insertText: 'bounds()',
       doc: 'Device-space bounding rect (local bbox run through the current transform).' },
     { label: 'transform',        kind: 'Property',
@@ -1162,6 +1262,193 @@ export const MEMBERS = {
       doc: 'Ray-march a tile grid (DDA). Args: origin (vec2), angle (radians), depth (max tiles).\nReturns a list of (point, cell, edge, offset, distance) hit tuples up to depth.' },
     { label: 'raycast',   kind: 'Function', insertText: 'raycast(${1:origin}, ${2:angle}, ${3:fov}, ${4:rays}, ${5:max_dist}, ${6:map})',
       doc: '2D raycaster over a byte tilemap. Args: origin (vec2), angle (radians), fov (radians), rays (int), max_dist, map (bytearray), width, height, screen_width.\nReturns one hit-list per ray.' },
+  ],
+
+  // -- pico3d: module namespace ----------------------------------------------
+  pico3d: [
+    { label: 'vec3',     kind: 'Class', insertText: 'vec3(${1:x}, ${2:y}, ${3:z})',
+      doc: '3D vector / point. Fields: .x, .y, .z\nPositions, directions and axes all use this.' },
+    { label: 'mat4',     kind: 'Class', insertText: 'mat4()',
+      doc: '3D transform (4x4). Builders modify and return this matrix, and post-multiply, so mat4().translate(...).rotate_y(...) rotates first and then translates.\nCameras: mat4.perspective(fov, aspect, near, far), mat4.look_at(eye, target, up).' },
+    { label: 'mesh',     kind: 'Class', insertText: 'mesh(${1:positions}, ${2:indices})',
+      doc: 'Indexed triangle geometry over existing buffers. Copies nothing: it points into the arrays it was given and holds them alive, so they stay live and writable.\npositions is an array("f") of 3 floats a vertex, indices an array("H") of 3 vertex indices a triangle.',
+      signature: SIG_MESH },
+    { label: 'material', kind: 'Class', insertText: 'material(${1:color=color.white})',
+      doc: 'How a surface is coloured: a base colour, an optional texture, and which shading model resolves the light.\nThe scalar settings stay writable; texture, normal_map and matcap are fixed at construction.',
+      signature: SIG_MATERIAL },
+    { label: 'light',    kind: 'Class', insertText: 'light(${1:direction=vec3(0, 0, -1)})',
+      doc: 'One light, directional by default; give it a position and it becomes a point light with distance falloff.\nA scene gets one light - fill in the rest with ambient, which is added everywhere regardless of facing.',
+      signature: SIG_LIGHT },
+    { label: 'surface',  kind: 'Class', insertText: 'surface(${1:image})',
+      doc: 'A render target: a picovector image plus the 16-bit depth buffer that goes with it. Build it once and keep it.\nThe image supplies the pixels, so 3D and 2D share one framebuffer, and its clip rect bounds the render.\nPass bands= to rasterise a scene a band of rows at a time, for a much smaller depth buffer.',
+      signature: SIG_SURFACE },
+    { label: 'scene',    kind: 'Class', insertText: 'scene(${1:surface})',
+      doc: 'A frame\'s geometry, transformed and projected once up front and then rasterised in horizontal bands.\nWhere render() draws a mesh the moment you hand it over, add() defers into the scene\'s own arena and surface.draw() runs the finished geometry past one band at a time - so the depth buffer need only be one band tall.\nNothing allocates after construction: the capacities are fixed and add() returns False rather than growing.',
+      signature: SIG_SCENE },
+    { label: 'engine',   kind: 'Module',
+      doc: 'Engine-wide settings and counters: engine.cores(n), engine.core_count(), engine.profile().' },
+  ],
+
+  // -- pico3d: vec3 -----------------------------------------------------------
+  vec3: [
+    { label: 'x',               kind: 'Property', doc: 'X component (float).' },
+    { label: 'y',               kind: 'Property', doc: 'Y component (float).' },
+    { label: 'z',               kind: 'Property', doc: 'Z component (float).' },
+    { label: 'length',          kind: 'Method', insertText: 'length()',
+      doc: 'Length of this vector.' },
+    { label: 'length_squared',  kind: 'Method', insertText: 'length_squared()',
+      doc: 'Length squared, which needs no square root. Use it to compare two distances or to test one against a radius.' },
+    { label: 'normalized',      kind: 'Method', insertText: 'normalized()',
+      doc: 'A unit-length copy, pointing the same way. A zero vector normalises to zero rather than to NaN.' },
+    { label: 'dot',             kind: 'Method', insertText: 'dot(${1:other})',
+      doc: 'Dot product. For two unit vectors, the cosine of the angle between them.' },
+    { label: 'cross',           kind: 'Method', insertText: 'cross(${1:other})',
+      doc: 'Cross product: a vector perpendicular to both, right-handed.' },
+    { label: 'lerp',            kind: 'Method', insertText: 'lerp(${1:other}, ${2:t})',
+      doc: 'Linear interpolation towards other, t from 0 to 1. Not clamped.' },
+  ],
+
+  // -- pico3d: mat4 -----------------------------------------------------------
+  mat4: [
+    { label: 'perspective',  kind: 'Function',
+      insertText: 'perspective(${1:fov}, ${2:aspect}, ${3:near}, ${4:far})',
+      doc: 'A right-handed perspective projection. Static.\nfov is the vertical field of view in degrees, aspect is width / height, and near / far bound the view frustum.\nKeep near as large as the scene allows: the depth buffer is 16-bit, and its precision is spent near the camera.' },
+    { label: 'look_at',      kind: 'Function',
+      insertText: 'look_at(${1:eye}, ${2:target}, ${3:up})',
+      doc: 'A view matrix for a camera at eye looking at target, with up naming which way is up (usually vec3(0, 1, 0)). Static.' },
+    { label: 'translate',    kind: 'Method', insertText: 'translate(${1:x}, ${2:y}, ${3:z})',
+      doc: 'Translate by (x, y, z). Modifies and returns this transform.' },
+    { label: 'scale',        kind: 'Method', insertText: 'scale(${1:x})',
+      doc: 'Scale by (x, y, z). Pass one value to scale uniformly. Modifies and returns this transform.' },
+    { label: 'rotate_x',     kind: 'Method', insertText: 'rotate_x(${1:degrees})',
+      doc: 'Rotate about the x axis by degrees. Modifies and returns this transform.' },
+    { label: 'rotate_y',     kind: 'Method', insertText: 'rotate_y(${1:degrees})',
+      doc: 'Rotate about the y axis by degrees. Modifies and returns this transform.' },
+    { label: 'rotate_z',     kind: 'Method', insertText: 'rotate_z(${1:degrees})',
+      doc: 'Rotate about the z axis by degrees. Modifies and returns this transform.' },
+    { label: 'rotate_x_radians', kind: 'Method', insertText: 'rotate_x_radians(${1:radians})',
+      doc: 'Rotate about the x axis by radians. Modifies and returns this transform.' },
+    { label: 'rotate_y_radians', kind: 'Method', insertText: 'rotate_y_radians(${1:radians})',
+      doc: 'Rotate about the y axis by radians. Modifies and returns this transform.' },
+    { label: 'rotate_z_radians', kind: 'Method', insertText: 'rotate_z_radians(${1:radians})',
+      doc: 'Rotate about the z axis by radians. Modifies and returns this transform.' },
+    { label: 'multiply',     kind: 'Method', insertText: 'multiply(${1:other})',
+      doc: 'Multiply this transform by another. Modifies and returns this transform.' },
+    { label: 'project',      kind: 'Method', insertText: 'project(${1:p})',
+      doc: 'Transform a position and divide through by w, giving normalised device coordinates: x and y in -1..1 across the viewport, z in -1..1 between the near and far planes.\nUndefined for a point at or behind the eye.' },
+    { label: 'transform_direction', kind: 'Method', insertText: 'transform_direction(${1:d})',
+      doc: 'Transform a direction, ignoring the translation. Correct for normals under rotation and uniform scale; a non-uniform scale would need the inverse transpose.' },
+  ],
+
+  // -- pico3d: mesh -----------------------------------------------------------
+  mesh: [
+    { label: 'vertices',  kind: 'Property', doc: 'Vertex count, from the length of positions (read-only).' },
+    { label: 'triangles', kind: 'Property', doc: 'Triangle count, from the length of indices (read-only).' },
+    { label: 'positions', kind: 'Property',
+      doc: 'The position array this mesh was built over (read-only reference; the array itself stays writable). Write into it to deform the mesh, then call update_bounds().' },
+    { label: 'indices',   kind: 'Property', doc: 'The index array this mesh was built over (read-only).' },
+    { label: 'normals',   kind: 'Property', doc: 'The normal array, or None (read-only).' },
+    { label: 'uvs',       kind: 'Property', doc: 'The texture-coordinate array, or None (read-only).' },
+    { label: 'colors',    kind: 'Property', doc: 'The per-vertex colour array, or None (read-only).' },
+    { label: 'tangents',  kind: 'Property', doc: 'The tangent array, or None (read-only).' },
+    { label: 'update_bounds', kind: 'Method', insertText: 'update_bounds()',
+      doc: 'Re-measure the model-space bounding box from positions.\nThe box is measured once when the mesh is built, and a mesh whose box falls outside the frustum is rejected whole rather than transformed vertex by vertex. Deforming the mesh through positions leaves the box stale, so call this after moving a vertex outside it - otherwise the mesh can be culled while it is still on screen.' },
+  ],
+
+  // -- pico3d: material -------------------------------------------------------
+  material: [
+    { label: 'FLAT',     kind: 'Constant', doc: 'Shading: one face normal, so one light value per triangle.' },
+    { label: 'GOURAUD',  kind: 'Constant', doc: 'Shading: per-vertex normals, with the light interpolated across the face.' },
+    { label: 'UNLIT',    kind: 'Constant', doc: 'Shading: no lighting; the colour (times the texture) as-is.' },
+    { label: 'NEAREST',  kind: 'Constant', doc: 'Texture filter: nearest texel (fastest).' },
+    { label: 'BILINEAR', kind: 'Constant', doc: 'Texture filter: bilinear (smooth). Four texel reads a pixel.' },
+    { label: 'color',    kind: 'Property',
+      doc: 'The base colour, as a color. It multiplies the texture sample, so white leaves a texture alone, and a mesh with per-vertex colors ignores this entirely.\nAlpha is not used - the engine writes opaque pixels.' },
+    { label: 'texture',  kind: 'Property',
+      doc: 'The RGBA image sampled through the mesh uvs, or None (read-only, set at construction). Edge-clamped, so uvs outside 0..1 stretch the border rather than wrapping.' },
+    { label: 'filter',   kind: 'Property',
+      doc: 'How the texture is sampled: material.NEAREST (default) or material.BILINEAR.' },
+    { label: 'shading',  kind: 'Property',
+      doc: 'Which shading model resolves the light: material.FLAT (default), GOURAUD or UNLIT. All three resolve the light per vertex, so this costs nothing per pixel.' },
+    { label: 'double_sided', kind: 'Property',
+      doc: 'Draw back faces too (default False). Back-face culling halves the triangles a closed mesh sets up, so leave this off unless the geometry is genuinely open.' },
+    { label: 'alpha_cutoff', kind: 'Property',
+      doc: 'Discard texels whose alpha is below this, 0 to draw them all (default 128). A cutout, not blending: a pixel is either written or skipped.' },
+    { label: 'normal_map', kind: 'Property',
+      doc: 'A tangent-space normal map, or None (read-only, set at construction). Needs mesh tangents and a light, and moves lighting to per-pixel.' },
+    { label: 'matcap',   kind: 'Property',
+      doc: 'A matcap / spherical environment map, or None (read-only, set at construction). Needs mesh normals and render(view=...), and shades per-pixel by sampling this image with the interpolated normal - a whole material look baked into one texture, with no light involved.' },
+    { label: 'specular', kind: 'Property',
+      doc: 'Blinn-Phong highlight colour, as a color, or black for no highlight (the default). Needs a light and render(view=...); adds on top of the diffuse, per-pixel.' },
+    { label: 'shininess', kind: 'Property',
+      doc: 'Blinn-Phong exponent (default 32). Higher is a tighter, sharper highlight. Only read when specular is set.' },
+  ],
+
+  // -- pico3d: light ----------------------------------------------------------
+  light: [
+    { label: 'direction', kind: 'Property',
+      doc: 'The direction the light travels, in world space (a vec3). Ignored by a point light. Need not be normalised.' },
+    { label: 'color',     kind: 'Property',
+      doc: 'Diffuse colour, as a color, scaled by how much a face faces the light.' },
+    { label: 'ambient',   kind: 'Property',
+      doc: 'Ambient colour, as a color, added everywhere whatever the facing. This is the floor on how dark an unlit face gets.' },
+    { label: 'position',  kind: 'Property',
+      doc: 'World position of a point light (a vec3). Only read when point is set, which passing position to the constructor is what does.' },
+    { label: 'point',     kind: 'Property',
+      doc: 'True for a point light, False for a directional one. Set it back to False to go directional again without rebuilding the light.' },
+    { label: 'atten',     kind: 'Property',
+      doc: 'Point-light falloff: brightness scales by 1 / (1 + atten * distance^2). 0 is no falloff at all; larger values pull the lit region in closer.' },
+  ],
+
+  // -- pico3d: surface --------------------------------------------------------
+  surface: [
+    { label: 'image',       kind: 'Property', doc: 'The image being drawn into (read-only). Holding the surface keeps it alive.' },
+    { label: 'width',       kind: 'Property', doc: 'Width in pixels (read-only).' },
+    { label: 'height',      kind: 'Property', doc: 'Height in pixels (read-only).' },
+    { label: 'bands',       kind: 'Property', doc: 'How many horizontal bands draw() splits the surface into (read-only). Set at construction.' },
+    { label: 'band_rows',   kind: 'Property', doc: 'Rows one band covers, which is also the depth buffer height (read-only).' },
+    { label: 'fog',         kind: 'Property',
+      doc: 'The colour every surface fades towards with distance, as a color. Set fog_far past fog_near to turn it on; it is off until you do.\nMatch it to whatever the frame is cleared to and the scene recedes into the background instead of into a haze that sits in front of it.' },
+    { label: 'fog_near',    kind: 'Property',
+      doc: 'Distance from the eye at which the fade starts. Nearer than this is untouched.' },
+    { label: 'fog_far',     kind: 'Property',
+      doc: 'Distance at which a surface is entirely fog. Leave it at or below fog_near - which is how a surface starts - and no fog is applied.\nThe fade is resolved per vertex, after the light, so it depends only on depth: a wall seen edge-on fogs exactly as much as one faced square-on at the same distance.' },
+    { label: 'clear_depth', kind: 'Method', insertText: 'clear_depth()',
+      doc: 'Reset the depth buffer to value (0 is the near plane, 65535 the far one, which is the default).\nCall it once a frame before the first render, or everything is depth-tested against last frame.' },
+    { label: 'render',      kind: 'Method',
+      insertText: 'render(${1:mesh}, ${2:model}, ${3:view_proj}, ${4:material}, ${5:light})',
+      doc: 'Transform a mesh, resolve its light and rasterise it. model places it in the world and view_proj is the camera (projection times view).\nReturns the number of triangles actually drawn, the rest having been culled.\nNeeds bands=1; a banded surface uses draw(scene) instead.',
+      signature: SIG_RENDER },
+    { label: 'draw',        kind: 'Method', insertText: 'draw(${1:scene})',
+      doc: 'Rasterise a scene, one band of rows at a time, and return the number of triangles drawn.\nEach band clears its own slice of the depth buffer first, so there is no clear_depth() to remember.\nThe scene has to be one built against this surface: add() projects for a particular viewport.',
+      signature: SIG_DRAW },
+  ],
+
+  // -- pico3d: scene ----------------------------------------------------------
+  scene: [
+    { label: 'surface',   kind: 'Property', doc: 'The surface this scene projects for (read-only).' },
+    { label: 'meshes',    kind: 'Property', doc: 'Meshes added since the last reset (read-only).' },
+    { label: 'vertices',  kind: 'Property', doc: 'Vertices held, across every mesh added (read-only).' },
+    { label: 'triangles', kind: 'Property', doc: 'Triangles held, across every mesh added (read-only).' },
+    { label: 'mesh_capacity',     kind: 'Property', doc: 'How many meshes it was built to hold (read-only).' },
+    { label: 'vertex_capacity',   kind: 'Property', doc: 'How many vertices it was built to hold (read-only).' },
+    { label: 'triangle_capacity', kind: 'Property', doc: 'How many triangles it was built to hold (read-only).' },
+    { label: 'reset',     kind: 'Method', insertText: 'reset()',
+      doc: 'Empty the scene, ready for the next frame.\nCall it before the frame\'s first add(), not after draw(): the geometry has to stay put until it has been rasterised.' },
+    { label: 'add',       kind: 'Method',
+      insertText: 'add(${1:mesh}, ${2:model}, ${3:view_proj}, ${4:material}, ${5:light})',
+      doc: 'Transform a mesh, resolve its light and project it into the scene. The arguments are surface.render() arguments, and mean the same things.\nReturns False if the scene is full, having added nothing - check it if the geometry on screen varies, since the alternative is silently dropping whatever came last.\nA mesh outside the frustum is culled whole, before any of its vertices are transformed, and reports True.',
+      signature: SIG_SCENE_ADD },
+  ],
+
+  // -- pico3d: engine ---------------------------------------------------------
+  engine: [
+    { label: 'cores',      kind: 'Function', insertText: 'cores(${1:n})',
+      doc: 'Rasterise on one core or two, returning the count actually in effect - always 1 on a build without core1 (which includes the simulator).\nTwo cores split the screen into bands, so the win is on scenes that are fill-bound rather than triangle-bound.' },
+    { label: 'core_count', kind: 'Function', insertText: 'core_count()',
+      doc: 'How many cores the rasteriser is currently using.' },
+    { label: 'profile',    kind: 'Function', insertText: 'profile()',
+      doc: 'Cycle counts accumulated since the last call, and reset by it:\n(transform, build, project, planes, edges, fill, bbox_pixels, pixels).\nbbox_pixels counts every pixel the fill stepped over and pixels only those it wrote, so the ratio is how much of the bounding boxes the triangles actually covered. All zero on a build without the cycle counter.' },
   ],
 
   // -- MicroPython: math module -----------------------------------------------

@@ -11,8 +11,8 @@ import { userFS, getSystemPaths } from './fs.js';
    format them here: API tokens (types, calls, module.CONST, ALL_CAPS) become
    monospace code spans, everything else is markdown-escaped so prose like
    [sprite:name], *args and <= survives verbatim. */
-const MD_TYPES = 'vec2|rect|mat3|indexed_image|image|color|brush|shape|spritesheet|tween|pixel_font|vector_font|font';
-const MD_ROOTS = 'screen|image|badge|display|shape|color|brush|text|font|rtc|mat3|vec2|rect|tween|spritesheet|algorithm|loop|State';
+const MD_TYPES = 'vec2|vec3|rect|mat3|mat4|indexed_image|image|color|brush|shape|spritesheet|tween|pixel_font|vector_font|font|mesh|material|light|surface|scene';
+const MD_ROOTS = 'screen|image|badge|display|shape|color|brush|text|font|rtc|mat3|vec2|rect|tween|spritesheet|algorithm|loop|State|pico3d|mat4|vec3|mesh|material|light|surface|engine|scene';
 // Tried in order at each position; the first (longest, call-shaped) wins.
 const MD_CODE_RE = new RegExp(
   '[A-Za-z_]\\w*(?:\\.[A-Za-z_]\\w*)*\\([^)\\n]*\\)' +   // calls: vec2(80, 60), screen.text()
@@ -147,9 +147,10 @@ function configureMonaco(monaco) {
   /* -- Type inference: scan document for ident = TypeName(...) patterns --
      Returns the MEMBERS array for the inferred type, or null.             */
   function inferMembersFromDoc(ident, docText) {
-    // Match:  ident = TypeName(        → direct constructor
-    //         ident = module.method(   → factory method on a known module
-    const re = new RegExp(`\\b${ident}\\s*=\\s*(\\w+)(?:\\.(\\w+))?\\s*\\(`, 'g');
+    // Match:  ident = TypeName(           → direct constructor
+    //         ident = module.method(      → factory method on a known module
+    //         ident = module.Type.method( → static on a type inside a module
+    const re = new RegExp(`\\b${ident}\\s*=\\s*(\\w+)(?:\\.(\\w+))?(?:\\.(\\w+))?\\s*\\(`, 'g');
     let last = null, m;
     while ((m = re.exec(docText)) !== null) last = m;
     if (!last) return null;
@@ -162,6 +163,8 @@ function configureMonaco(monaco) {
     // Factory call on a known module/type
     switch (typeName) {
       case 'shape':      return MEMBERS.shape;               // any shape.* → shape instance
+      // pico3d.vec3(...), and pico3d.mat4.perspective(...) → still a mat4.
+      case 'pico3d':     return MEMBERS[method] ?? null;
       case 'image':
       case 'screen': {
         if (method === 'load' || method === 'window' || method === 'sprite') return MEMBERS.image;
